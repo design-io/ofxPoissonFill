@@ -10,20 +10,13 @@
 //
 
 #pragma once
-#ifdef DIO_ASSETS
-#include "AutoShader.h"
-#endif
 
 #define PF_MAX_LAYERS 12
 class PoissonFill{public:
   ofFbo downs[PF_MAX_LAYERS];
   ofFbo ups  [PF_MAX_LAYERS];
   
-#ifdef DIO_ASSETS
-    AutoShader shader;
-#else
-    ofShader shader;
-#endif
+ofShader shader;
   int w = 0;
   int h = 0;
   int depth = 0;
@@ -58,14 +51,8 @@ class PoissonFill{public:
 //      ups[i].allocate(_w,_h,GL_RGBA);
         ups[i].allocate(ceil(tw),ceil(th),GL_RGBA);
     }
-      #ifdef DIO_ASSETS
-//
-      if( !shader.getShader().isLoaded() ) {
-          ofLogWarning("LOAD THE POISSON SHADER");
-      }
-        #else
-             shader = shader2way();
-        #endif
+
+     shader = shader2way();
   }
   
   /// \brief Initialize Poisson filler and allocate necessary datastructures
@@ -131,7 +118,6 @@ class PoissonFill{public:
     p.end();
   }
   
-#ifndef DIO_ASSETS
   ofShader shader2way(){
     ofShader sh;
       if(ofIsGLProgrammableRenderer()){
@@ -352,6 +338,6 @@ class PoissonFill{public:
     sh.linkProgram();
     return sh;
   }
-#endif
+
   
 };
