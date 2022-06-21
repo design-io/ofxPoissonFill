@@ -9,18 +9,24 @@
 // Rendu (https://github.com/kosua20/Rendu)
 //
 
-#ifndef poissonfill_h
-#define poissonfill_h
+#pragma once
+#ifdef DIO_ASSETS
+#include "AutoShader.h"
+#endif
 
 #define PF_MAX_LAYERS 12
 class PoissonFill{public:
   ofFbo downs[PF_MAX_LAYERS];
   ofFbo ups  [PF_MAX_LAYERS];
   
-  ofShader shader;
-  int w;
-  int h;
-  int depth;
+#ifdef DIO_ASSETS
+    AutoShader shader;
+#else
+    ofShader shader;
+#endif
+  int w = 0;
+  int h = 0;
+  int depth = 0;
   
   /// \brief Initialize Poisson filler and allocate necessary datastructures
   ///
@@ -32,17 +38,34 @@ class PoissonFill{public:
     h = _h;
     depth = min(PF_MAX_LAYERS,_depth);
     
+      float tw = _w;
+      float th = _h;
     for (int i = 0; i < depth; i++){
-      _w /= 2;
-      _h /= 2;
-      downs[i].allocate(_w,_h,GL_RGBA);
+//      _w /= 2;
+//      _h /= 2;
+        tw /= 2.f;
+        th /= 2.f;
+//        cout << "Poisson down: " << i << " " << tw << " x " << th << " src w: " << w << " x " << h << endl;
+//      downs[i].allocate(_w,_h,GL_RGBA);
+        downs[i].allocate(ceil(tw),ceil(th),GL_RGBA);
     }
     for (int i = 0; i < depth; i++){
-      _w *= 2;
-      _h *= 2;
-      ups[i].allocate(_w,_h,GL_RGBA);
+//      _w *= 2;
+//      _h *= 2;
+        tw *= 2.f;
+        th *= 2.f;
+//        cout << "Poisson up: " << i << " " << tw << " x " << th << " src w: " << w << " x " << h << endl;
+//      ups[i].allocate(_w,_h,GL_RGBA);
+        ups[i].allocate(ceil(tw),ceil(th),GL_RGBA);
     }
-    shader = shader2way();
+      #ifdef DIO_ASSETS
+//
+      if( !shader.getShader().isLoaded() ) {
+          ofLogWarning("LOAD THE POISSON SHADER");
+      }
+        #else
+             shader = shader2way();
+        #endif
   }
   
   /// \brief Initialize Poisson filler and allocate necessary datastructures
@@ -52,7 +75,7 @@ class PoissonFill{public:
   /// \param _w input texture width
   /// \param _h input texture width
   void init(int _w, int _h){
-    int _depth = log2(min(_w,_h))-1;
+      int _depth = log2(min(_w,_h))-1;
     init(_w,_h,_depth);
   }
   
@@ -79,6 +102,10 @@ class PoissonFill{public:
   ofTexture& getTexture(){
     return ups[depth-1].getTexture();
   }
+    
+    ofFbo& getFbo() {
+        return ups[depth-1];
+    }
   
   void pass(ofFbo& p, ofTexture* tex1, ofTexture* tex2){
     p.begin();
@@ -104,119 +131,227 @@ class PoissonFill{public:
     p.end();
   }
   
-  
+#ifndef DIO_ASSETS
   ofShader shader2way(){
     ofShader sh;
-    sh.setupShaderFromSource(GL_FRAGMENT_SHADER, R"(
-      #version 120
-      uniform sampler2DRect unf;
-      uniform sampler2DRect fil;
-      // uniform int w;
-      // uniform int h;
-      uniform bool isup;
-                             
-      float h1(int i){
-        if (i == 0 || i == 4){
-          return 0.1507;
-        }
-        if (i == 1 || i == 3){
-          return 0.6836;
-        }
-        return 1.0334;
-      }
-      
-      float G(int i){
-        if (i == 0 || i == 2){
-          return 0.0312;
-        }
-        return 0.7753;
-      }
-      
-      void main(){
+      if(ofIsGLProgrammableRenderer()){
+          sh.setupShaderFromSource(GL_FRAGMENT_SHADER, R"(
+            #version 330
+            uniform sampler2DRect unf;
+            uniform sampler2DRect fil;
+            // uniform int w;
+            // uniform int h;
+            uniform bool isup;
 
-        int i = int(gl_FragCoord.y-0.5);
-        int j = int(gl_FragCoord.x-0.5);
+           out vec4 outColor;
 
-        if (!isup){
-
-          int x = j * 2;
-          int y = i * 2;
-
-          vec4 acc = vec4(0.0,0.0,0.0,0.0);
-          for (int dy = -2; dy <= 2; dy++) {
-            for (int dx = -2; dx <= 2; dx++) {
-              int nx = x + dx;
-              int ny = y + dy;
-
-              // if (nx < 0 || nx >= w || ny < 0 || ny >= h){
-              //   continue;
-              // }
-
-              vec4 col = texture2DRect(unf, vec2(float(nx)+1.0, float(ny)+1.0));
-
-              acc.r += h1(dx+2) * h1(dy+2) * col.r;
-              acc.g += h1(dx+2) * h1(dy+2) * col.g;
-              acc.b += h1(dx+2) * h1(dy+2) * col.b;
-              acc.a += h1(dx+2) * h1(dy+2) * col.a;
+            float h1(int i){
+              if (i == 0 || i == 4){
+                return 0.1507;
+              }
+              if (i == 1 || i == 3){
+                return 0.6836;
+              }
+              return 1.0334;
             }
-          }
-          if (acc.a == 0.0){
-            gl_FragColor = acc;
-          }else{
-            gl_FragColor = vec4(acc.r/acc.a,acc.g/acc.a,acc.b/acc.a,1.0);
-          }
-          
-        }else{
-          float h2 = 0.0270;
 
-          vec4 acc = vec4(0.0,0.0,0.0,0.0);
-          for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -1; dx <= 1; dx++) {
-              int nx = j + dx;
-              int ny = i + dy;
-
-              // if (nx < 0 || nx >= w || ny < 0 || ny >= h){
-              //   continue;
-              // }
-
-              vec4 col = texture2DRect(unf, vec2(float(nx)+1.0, float(ny)+1.0));
-
-              acc.r += G(dx+1) * G(dy+1) * col.r;
-              acc.g += G(dx+1) * G(dy+1) * col.g;
-              acc.b += G(dx+1) * G(dy+1) * col.b;
-              acc.a += G(dx+1) * G(dy+1) * col.a;
+            float G(int i){
+              if (i == 0 || i == 2){
+                return 0.0312;
+              }
+              return 0.7753;
             }
-          }
-          for (int dy = -2; dy <= 2; dy++) {
-            for (int dx = -2; dx <= 2; dx++) {
-              int nx = j + dx;
-              int ny = i + dy;
-              nx /= 2;
-              ny /= 2;
-              // if (nx < 0 || nx >= w/2 || ny < 0 || ny >= h/2){
-              //   continue;
-              // }
-              vec4 col = texture2DRect(fil, vec2(float(nx), float(ny)));
 
-              acc.r += h2 * h1(dx+2) * h1(dy+2) * col.r;
-              acc.g += h2 * h1(dx+2) * h1(dy+2) * col.g;
-              acc.b += h2 * h1(dx+2) * h1(dy+2) * col.b;
-              acc.a += h2 * h1(dx+2) * h1(dy+2) * col.a;
+            void main(){
+
+              int i = int(gl_FragCoord.y-0.5);
+              int j = int(gl_FragCoord.x-0.5);
+
+              if (!isup){
+
+                int x = j * 2;
+                int y = i * 2;
+
+                vec4 acc = vec4(0.0,0.0,0.0,0.0);
+                for (int dy = -2; dy <= 2; dy++) {
+                  for (int dx = -2; dx <= 2; dx++) {
+                    int nx = x + dx;
+                    int ny = y + dy;
+
+                    // if (nx < 0 || nx >= w || ny < 0 || ny >= h){
+                    //   continue;
+                    // }
+
+                    vec4 col = texture(unf, vec2(float(nx)+1.0, float(ny)+1.0));
+
+                    acc.r += h1(dx+2) * h1(dy+2) * col.r;
+                    acc.g += h1(dx+2) * h1(dy+2) * col.g;
+                    acc.b += h1(dx+2) * h1(dy+2) * col.b;
+                    acc.a += h1(dx+2) * h1(dy+2) * col.a;
+                  }
+                }
+                if (acc.a == 0.0){
+                  outColor = acc;
+                }else{
+                  outColor = vec4(acc.r/acc.a,acc.g/acc.a,acc.b/acc.a,1.0);
+                }
+
+              }else{
+                float h2 = 0.0270;
+
+                vec4 acc = vec4(0.0,0.0,0.0,0.0);
+                for (int dy = -1; dy <= 1; dy++) {
+                  for (int dx = -1; dx <= 1; dx++) {
+                    int nx = j + dx;
+                    int ny = i + dy;
+
+                    // if (nx < 0 || nx >= w || ny < 0 || ny >= h){
+                    //   continue;
+                    // }
+
+                    vec4 col = texture(unf, vec2(float(nx)+1.0, float(ny)+1.0));
+
+                    acc.r += G(dx+1) * G(dy+1) * col.r;
+                    acc.g += G(dx+1) * G(dy+1) * col.g;
+                    acc.b += G(dx+1) * G(dy+1) * col.b;
+                    acc.a += G(dx+1) * G(dy+1) * col.a;
+                  }
+                }
+                for (int dy = -2; dy <= 2; dy++) {
+                  for (int dx = -2; dx <= 2; dx++) {
+                    int nx = j + dx;
+                    int ny = i + dy;
+                    nx /= 2;
+                    ny /= 2;
+                    // if (nx < 0 || nx >= w/2 || ny < 0 || ny >= h/2){
+                    //   continue;
+                    // }
+                    vec4 col = texture(fil, vec2(float(nx), float(ny)));
+
+                    acc.r += h2 * h1(dx+2) * h1(dy+2) * col.r;
+                    acc.g += h2 * h1(dx+2) * h1(dy+2) * col.g;
+                    acc.b += h2 * h1(dx+2) * h1(dy+2) * col.b;
+                    acc.a += h2 * h1(dx+2) * h1(dy+2) * col.a;
+                  }
+                }
+                if (acc.a == 0.0){
+                  outColor = acc;
+                }else{
+                  outColor = vec4(acc.r/acc.a,acc.g/acc.a,acc.b/acc.a,1.0);
+                }
+              }
             }
-          }
-          if (acc.a == 0.0){
-            gl_FragColor = acc;
-          }else{
-            gl_FragColor = vec4(acc.r/acc.a,acc.g/acc.a,acc.b/acc.a,1.0);
-          }
-        }
+          )");
+      } else {
+            sh.setupShaderFromSource(GL_FRAGMENT_SHADER, R"(
+              #version 120
+              uniform sampler2DRect unf;
+              uniform sampler2DRect fil;
+              // uniform int w;
+              // uniform int h;
+              uniform bool isup;
+
+              float h1(int i){
+                if (i == 0 || i == 4){
+                  return 0.1507;
+                }
+                if (i == 1 || i == 3){
+                  return 0.6836;
+                }
+                return 1.0334;
+              }
+
+              float G(int i){
+                if (i == 0 || i == 2){
+                  return 0.0312;
+                }
+                return 0.7753;
+              }
+
+              void main(){
+
+                int i = int(gl_FragCoord.y-0.5);
+                int j = int(gl_FragCoord.x-0.5);
+
+                if (!isup){
+
+                  int x = j * 2;
+                  int y = i * 2;
+
+                  vec4 acc = vec4(0.0,0.0,0.0,0.0);
+                  for (int dy = -2; dy <= 2; dy++) {
+                    for (int dx = -2; dx <= 2; dx++) {
+                      int nx = x + dx;
+                      int ny = y + dy;
+
+                      // if (nx < 0 || nx >= w || ny < 0 || ny >= h){
+                      //   continue;
+                      // }
+
+                      vec4 col = texture2DRect(unf, vec2(float(nx)+1.0, float(ny)+1.0));
+
+                      acc.r += h1(dx+2) * h1(dy+2) * col.r;
+                      acc.g += h1(dx+2) * h1(dy+2) * col.g;
+                      acc.b += h1(dx+2) * h1(dy+2) * col.b;
+                      acc.a += h1(dx+2) * h1(dy+2) * col.a;
+                    }
+                  }
+                  if (acc.a == 0.0){
+                    gl_FragColor = acc;
+                  }else{
+                    gl_FragColor = vec4(acc.r/acc.a,acc.g/acc.a,acc.b/acc.a,1.0);
+                  }
+
+                }else{
+                  float h2 = 0.0270;
+
+                  vec4 acc = vec4(0.0,0.0,0.0,0.0);
+                  for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                      int nx = j + dx;
+                      int ny = i + dy;
+
+                      // if (nx < 0 || nx >= w || ny < 0 || ny >= h){
+                      //   continue;
+                      // }
+
+                      vec4 col = texture2DRect(unf, vec2(float(nx)+1.0, float(ny)+1.0));
+
+                      acc.r += G(dx+1) * G(dy+1) * col.r;
+                      acc.g += G(dx+1) * G(dy+1) * col.g;
+                      acc.b += G(dx+1) * G(dy+1) * col.b;
+                      acc.a += G(dx+1) * G(dy+1) * col.a;
+                    }
+                  }
+                  for (int dy = -2; dy <= 2; dy++) {
+                    for (int dx = -2; dx <= 2; dx++) {
+                      int nx = j + dx;
+                      int ny = i + dy;
+                      nx /= 2;
+                      ny /= 2;
+                      // if (nx < 0 || nx >= w/2 || ny < 0 || ny >= h/2){
+                      //   continue;
+                      // }
+                      vec4 col = texture2DRect(fil, vec2(float(nx), float(ny)));
+
+                      acc.r += h2 * h1(dx+2) * h1(dy+2) * col.r;
+                      acc.g += h2 * h1(dx+2) * h1(dy+2) * col.g;
+                      acc.b += h2 * h1(dx+2) * h1(dy+2) * col.b;
+                      acc.a += h2 * h1(dx+2) * h1(dy+2) * col.a;
+                    }
+                  }
+                  if (acc.a == 0.0){
+                    gl_FragColor = acc;
+                  }else{
+                    gl_FragColor = vec4(acc.r/acc.a,acc.g/acc.a,acc.b/acc.a,1.0);
+                  }
+                }
+              }
+            )");
       }
-    )");
     sh.linkProgram();
     return sh;
   }
-  
+#endif
   
 };
-
-#endif /* poissonfill_h */
